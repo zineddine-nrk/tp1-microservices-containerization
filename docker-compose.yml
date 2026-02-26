@@ -1,0 +1,236 @@
+services:
+
+  # ──────────────────────────────────────────────
+  # Infrastructure: Databases
+  # ──────────────────────────────────────────────
+
+  catalogue-db:
+    image: postgres:16-alpine
+    container_name: catalogue-db
+    environment:
+      POSTGRES_DB: ${CATALOGUE_DB_NAME}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "${CATALOGUE_DB_PORT}:5432"
+    volumes:
+      - catalogue-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${CATALOGUE_DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  commande-db:
+    image: postgres:16-alpine
+    container_name: commande-db
+    environment:
+      POSTGRES_DB: ${COMMANDE_DB_NAME}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "${COMMANDE_DB_PORT}:5432"
+    volumes:
+      - commande-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${COMMANDE_DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  paiement-db:
+    image: postgres:16-alpine
+    container_name: paiement-db
+    environment:
+      POSTGRES_DB: ${PAIEMENT_DB_NAME}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "${PAIEMENT_DB_PORT}:5432"
+    volumes:
+      - paiement-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${PAIEMENT_DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ──────────────────────────────────────────────
+  # Infrastructure: Discovery + Config
+  # ──────────────────────────────────────────────
+
+  discovery-service:
+    build:
+      context: ./discovery-service
+      dockerfile: Dockerfile
+    image: discovery-service
+    container_name: discovery-service
+    ports:
+      - "8761:8761"
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE}
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8761/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  config-service:
+    build:
+      context: ./config-service
+      dockerfile: Dockerfile
+    image: config-service
+    container_name: config-service
+    ports:
+      - "8888:8888"
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE}
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: ${EUREKA_URL}
+    depends_on:
+      discovery-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8888/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  # ──────────────────────────────────────────────
+  # Business Services
+  # ──────────────────────────────────────────────
+
+  catalogue-service:
+    build:
+      context: ./catalogue-service
+      dockerfile: Dockerfile
+    image: catalogue-service
+    container_name: catalogue-service
+    ports:
+      - "8081:8081"
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE}
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: ${EUREKA_URL}
+      SPRING_CLOUD_CONFIG_URI: ${CONFIG_SERVER_URL}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://catalogue-db:5432/${CATALOGUE_DB_NAME}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+    depends_on:
+      discovery-service:
+        condition: service_healthy
+      config-service:
+        condition: service_healthy
+      catalogue-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8081/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  commande-service:
+    build:
+      context: ./commande-service
+      dockerfile: Dockerfile
+    image: commande-service
+    container_name: commande-service
+    ports:
+      - "8082:8082"
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE}
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: ${EUREKA_URL}
+      SPRING_CLOUD_CONFIG_URI: ${CONFIG_SERVER_URL}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://commande-db:5432/${COMMANDE_DB_NAME}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+    depends_on:
+      discovery-service:
+        condition: service_healthy
+      config-service:
+        condition: service_healthy
+      commande-db:
+        condition: service_healthy
+      catalogue-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8082/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  paiement-service:
+    build:
+      context: ./paiement-service
+      dockerfile: Dockerfile
+    image: paiement-service
+    container_name: paiement-service
+    ports:
+      - "8083:8083"
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE}
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: ${EUREKA_URL}
+      SPRING_CLOUD_CONFIG_URI: ${CONFIG_SERVER_URL}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://paiement-db:5432/${PAIEMENT_DB_NAME}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+    depends_on:
+      discovery-service:
+        condition: service_healthy
+      config-service:
+        condition: service_healthy
+      paiement-db:
+        condition: service_healthy
+      commande-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8083/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  # ──────────────────────────────────────────────
+  # Gateway
+  # ──────────────────────────────────────────────
+
+  gateway-service:
+    build:
+      context: ./gateway-service
+      dockerfile: Dockerfile
+    image: gateway-service
+    container_name: gateway-service
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE}
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: ${EUREKA_URL}
+      SPRING_CLOUD_CONFIG_URI: ${CONFIG_SERVER_URL}
+    depends_on:
+      discovery-service:
+        condition: service_healthy
+      config-service:
+        condition: service_healthy
+      catalogue-service:
+        condition: service_healthy
+      commande-service:
+        condition: service_healthy
+      paiement-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+# ──────────────────────────────────────────────
+# Persistent Volumes
+# ──────────────────────────────────────────────
+
+volumes:
+  catalogue-data:
+  commande-data:
+  paiement-data:

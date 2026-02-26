@@ -208,7 +208,139 @@ curl http://localhost:8080/api/v1/paiements/commande/1
 
 ---
 
-## Ordre de démarrage
+## Partie C — Configuration des services
+
+### Variables d'environnement (`.env`)
+
+Toutes les variables sont centralisées dans le fichier `.env` à la racine :
+
+| Variable | Valeur par défaut | Description |
+|----------|-------------------|-------------|
+| `SPRING_PROFILES_ACTIVE` | `docker` | Profil Spring actif |
+| `EUREKA_URL` | `http://discovery-service:8761/eureka` | URL Eureka |
+| `CONFIG_SERVER_URL` | `http://config-service:8888` | URL Config Server |
+| `POSTGRES_USER` | `postgres` | Utilisateur PostgreSQL |
+| `POSTGRES_PASSWORD` | `postgres` | Mot de passe PostgreSQL |
+| `CATALOGUE_DB_NAME` | `cataloguedb` | Base catalogue |
+| `COMMANDE_DB_NAME` | `commandedb` | Base commande |
+| `PAIEMENT_DB_NAME` | `paiementdb` | Base paiement |
+
+### Réseau interne
+
+Docker Compose utilise le **réseau par défaut**. Les services communiquent entre eux via leur nom de service :
+- `http://discovery-service:8761`
+- `http://config-service:8888`
+- `http://catalogue-service:8081`
+- `http://commande-service:8082`
+- `http://paiement-service:8083`
+- `http://gateway-service:8080`
+
+### Images Docker
+
+Chaque Dockerfile utilise un build multi-stage avec le Maven Wrapper :
+1. **Build stage** (`eclipse-temurin:21-jdk`) : copie `.mvn` + `mvnw`, résout les dépendances offline, compile le JAR
+2. **Runtime stage** (`eclipse-temurin:21-jre`) : image légère pour exécuter le JAR
+
+### Bases de données (PostgreSQL)
+
+Chaque service métier dispose de sa propre base PostgreSQL :
+
+| Service | Container DB | Base | Port host |
+|---------|-------------|------|-----------|
+| catalogue-service | `catalogue-db` | `cataloguedb` | 5432 |
+| commande-service | `commande-db` | `commandedb` | 5433 |
+| paiement-service | `paiement-db` | `paiementdb` | 5434 |
+
+Les données sont persistées via des **volumes Docker** (`catalogue-data`, `commande-data`, `paiement-data`).
+
+### Healthchecks
+
+Chaque service a un healthcheck configuré :
+- **PostgreSQL** : `pg_isready`
+- **Spring Boot services** : `wget` sur `/actuator/health`
+- `depends_on` avec `condition: service_healthy` garantit l'ordre de démarrage
+
+---
+
+## Partie D — Lancement de l'architecture
+
+### Tâche 7 : Démarrer tous les services
+
+```bash
+# Mode build automatique (Tâche 14 — dev mode)
+docker compose up --build
+
+# En arrière-plan
+docker compose up --build -d
+```
+
+### Tâche 8 : Vérifier le bon fonctionnement
+
+```bash
+# Lister les conteneurs actifs
+docker compose ps
+```
+
+Vérifier l'accès via navigateur :
+- **Eureka Dashboard** : http://localhost:8761
+- **Config Server** : http://localhost:8888
+- **Gateway** : http://localhost:8080
+
+---
+
+## Partie E — Tests et validation
+
+### Tâche 9 : Vérifier la communication inter-services
+
+```bash
+# Vérifier que les services sont enregistrés dans Eureka
+curl http://localhost:8761/eureka/apps
+
+# Tester les appels via la Gateway
+curl http://localhost:8080/api/v1/produits
+curl http://localhost:8080/api/v1/commandes
+curl http://localhost:8080/api/v1/paiements
+```
+
+### Tâche 10 : Consulter les logs
+
+```bash
+# Tous les logs
+docker compose logs -f
+
+# Logs d'un service spécifique
+docker compose logs -f catalogue-service
+docker compose logs -f commande-service
+```
+
+---
+
+## Partie F — Arrêt de l'environnement
+
+### Tâche 11 : Arrêter les services
+
+```bash
+# Arrêter les services (conserve les volumes)
+docker compose down
+
+# Arrêter et supprimer les volumes (reset complet)
+docker compose down -v
+```
+
+### Construire une image individuellement
+
+```bash
+docker build -t discovery-service ./discovery-service
+docker build -t config-service ./config-service
+docker build -t gateway-service ./gateway-service
+docker build -t catalogue-service ./catalogue-service
+docker build -t commande-service ./commande-service
+docker build -t paiement-service ./paiement-service
+```
+
+---
+
+## Démarrage manuel (sans Docker)
 
 Les services doivent être démarrés dans cet ordre :
 
@@ -218,6 +350,17 @@ Les services doivent être démarrés dans cet ordre :
 4. **commande-service** (doit être prêt avant paiement-service)
 5. **paiement-service**
 6. **gateway-service**
+
+### Depuis IntelliJ IDEA
+1. Ouvrir le projet comme projet Maven multi-modules
+2. Attendre que Maven télécharge toutes les dépendances
+3. Lancer chaque service dans l'ordre ci-dessus (Run → Run 'Application')
+
+### Depuis le terminal
+```bash
+# Pour chaque service, dans son dossier
+mvn spring-boot:run
+```
 
 ## Scénario de test complet (End-to-End)
 
@@ -250,7 +393,9 @@ curl http://localhost:8080/api/v1/paiements
 | **Spring Boot 3.2.5** | Framework principal |
 | **Spring Cloud 2023.0.2** | Microservices (Gateway, Config, Eureka, Feign) |
 | **Java 21** | Langage |
-| **H2 Database** | Base de données en mémoire (dev) |
+| **H2 Database** | Base de données en mémoire (dev local) |
+| **PostgreSQL 16** | Base de données (Docker) |
+| **Docker / Docker Compose** | Conteneurisation et orchestration |
 | **OpenFeign** | Communication inter-services |
 | **JUnit 5 + Mockito** | Tests unitaires |
 | **Jakarta Validation** | Validation des DTOs |

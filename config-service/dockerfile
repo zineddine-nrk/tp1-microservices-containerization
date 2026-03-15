@@ -1,4 +1,5 @@
 FROM eclipse-temurin:21-jdk AS build
+# force rebuild
 WORKDIR /app
 COPY .mvn .mvn
 COPY mvnw .

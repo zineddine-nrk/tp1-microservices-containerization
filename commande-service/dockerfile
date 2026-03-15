@@ -1,5 +1,8 @@
 FROM eclipse-temurin:21-jdk AS build
+# force rebuild 2026-03-16
 WORKDIR /app
+# Ajout du cache Maven
+COPY .m2 /root/.m2
 COPY .mvn .mvn
 COPY mvnw .
 RUN chmod +x mvnw

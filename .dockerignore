@@ -1,4 +1,5 @@
 target/
+# Ne pas ignorer .m2 ni .mvn pour permettre le cache Maven
 *.iml
 .idea/
 .vscode/
